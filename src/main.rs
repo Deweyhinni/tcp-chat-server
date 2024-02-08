@@ -6,6 +6,7 @@ use std::sync::Mutex;
 use std::sync::Arc;
 use std::thread;
 
+/// # Splits a u16 into an array of two u8
 fn split_u16(short_u16: u16) -> [u8;2] {
     let high_byte: u8 = (short_u16 >> 8) as u8;
     let low_byte: u8 = (short_u16 & 0xff) as u8;
@@ -13,6 +14,7 @@ fn split_u16(short_u16: u16) -> [u8;2] {
     return [high_byte, low_byte];
 }
 
+/// # Turns an array of two u8 into a single u16
 fn combine_bytes(bytes: [u8;2]) -> u16 {
     let short_u16 = ((bytes[0] as u16) << 8) | bytes[1] as u16;
     short_u16
@@ -50,7 +52,7 @@ impl Message {
 /// first 4 bytes are ip, next two are port next byte is the length of the username in bytes and
 /// then the the username and then length of the message text in bytes is two bytes
 /// - bytes 0-3: ip
-/// - bytes 4-5: port
+/// - bytes 4-5: port buffer
 /// - byte 6: username length
 /// - username, max 255 bytes
 /// - two bytes, text length
@@ -100,6 +102,9 @@ pub fn decypher_message(message: &Vec<u8>) -> Message {
     message_out
 }
 
+/// # Takes a `TcpStream`, reads the data and returns a `Vec<u8>` buffer
+/// it first reads the length of the message, creates a Vec of that length and uses `read_exact()`
+/// to read to that buffer and returns it.
 fn handle_client(mut input_stream: TcpStream) -> Result<Vec<u8>, Error> {
     let peer = input_stream.peer_addr();
     println!("connection from: {}", peer.unwrap());
@@ -112,6 +117,11 @@ fn handle_client(mut input_stream: TcpStream) -> Result<Vec<u8>, Error> {
     Ok(buffer)
 }
 
+/// # Takes in a `HashMap` of streams and tries to find the right recipient and sends the message.
+/// it takes a reference to a `Arc<Mutex<HashMap<[u8;4],TcpStream>>>` a map of all connected
+/// clients and a Message and tries to find the right recipient based off the ip in the message
+/// then uses the `TcpStream` to send the message to the client by first sending the length of the
+/// message and then the content.
 fn relay(clients: &Arc<Mutex<HashMap<[u8;4],TcpStream>>>, message: Message) -> Result<(), Error> {
     let client_list = clients.lock().expect("failed to lock mutex");
     let mut client = client_list.get(&message.ip).ok_or(Err::<(), std::io::Error>(std::io::Error::new(std::io::ErrorKind::Other, "client not found"))).unwrap();
@@ -130,7 +140,7 @@ pub struct Server {
 }
 
 impl Server {
-    /// # creates a server instance and starts listener
+    /// # creates a server instance and binds listener
     pub fn start(port: u16, address: Option<Ipv4Addr>) -> Result<Self, Error> {
         Ok( Self {
             clients: Arc::new(Mutex::new(HashMap::new())),
@@ -138,6 +148,7 @@ impl Server {
         })
     }
 
+    /// # Starts listening and handles connections in new threads
     pub fn start_receive(&mut self) -> Result<(), Error> {
         for stream in self.listener.incoming() {
             let clients = Arc::clone(&self.clients);
