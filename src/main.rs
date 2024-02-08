@@ -52,7 +52,7 @@ impl Message {
 /// first 4 bytes are ip, next two are port next byte is the length of the username in bytes and
 /// then the the username and then length of the message text in bytes is two bytes
 /// - bytes 0-3: ip
-/// - bytes 4-5: port buffer
+/// - bytes 4-5: port
 /// - byte 6: username length
 /// - username, max 255 bytes
 /// - two bytes, text length
