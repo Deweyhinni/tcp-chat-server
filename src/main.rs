@@ -101,17 +101,24 @@ pub fn decypher_message(message: &Vec<u8>) -> Message {
 }
 
 fn handle_client(mut input_stream: TcpStream) -> Result<Vec<u8>, Error> {
-    let mut buffer: Vec<u8> = Vec::new();
     let peer = input_stream.peer_addr();
     println!("connection from: {}", peer.unwrap());
-    input_stream.read_to_end(&mut buffer)?;
+    let mut len_bytes = [0_u8;8];
+    input_stream.read_exact(&mut len_bytes)?;
+    let msg_len: usize = u64::from_be_bytes(len_bytes) as usize;
+    let mut buffer: Vec<u8> = vec![0;msg_len];
+    input_stream.read_exact(&mut buffer)?;
+    println!("{:?}", buffer);
     Ok(buffer)
 }
 
 fn relay(clients: &Arc<Mutex<HashMap<[u8;4],TcpStream>>>, message: Message) -> Result<(), Error> {
     let client_list = clients.lock().expect("failed to lock mutex");
     let mut client = client_list.get(&message.ip).ok_or(Err::<(), std::io::Error>(std::io::Error::new(std::io::ErrorKind::Other, "client not found"))).unwrap();
-    client.write_all(&generate_message(message))?;
+    let message_buffer: Vec<u8> = generate_message(message);
+    let buffer_len: usize = message_buffer.len();
+    client.write_all(&buffer_len.to_be_bytes())?;
+    client.write_all(&message_buffer)?;
     client.flush()?;
 
     Ok(())
