@@ -134,6 +134,14 @@ fn relay(clients: &Arc<Mutex<HashMap<[u8;4],TcpStream>>>, message: Message) -> R
     Ok(())
 }
 
+fn relay_loop(mut input_stream: TcpStream, clients: &Arc<Mutex<HashMap<[u8;4],TcpStream>>>) -> Result<(), Error> {
+    loop {
+        let msg_buff = handle_client(input_stream.try_clone()?)?;
+        let message: Message = decypher_message(&msg_buff);
+        relay(&clients, message)?;
+    }
+}
+
 pub struct Server {
     clients: Arc<Mutex<HashMap<[u8;4],TcpStream>>>,
     listener: TcpListener,
@@ -160,10 +168,11 @@ impl Server {
                     SocketAddr::V6(_) => return Err(std::io::Error::new(std::io::ErrorKind::Other, "ipv6 not supported")),
                 };
                 clients.lock().expect("locking mutex failed").insert(socket_addr_v4.ip().octets(), stream_clone);
-                let message: Message = decypher_message(&handle_client(stream)?);
-                relay(&clients, message)?;
-                
-                Ok(())
+                // let message: Message = decypher_message(&handle_client(stream)?);
+                // relay(&clients, message)?;
+                // 
+                // Ok(())
+                relay_loop(stream, &clients)
             });
         }
         Ok(())
