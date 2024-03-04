@@ -20,15 +20,93 @@ fn combine_bytes(bytes: [u8;2]) -> u16 {
     short_u16
 }
 
+pub enum Message {
+    ErrorMsg(ErrorMsg),
+    SuccessMsg(SuccessMsg),
+    TextMsg(TextMsg),
+}
+
 #[derive(Debug, Clone, PartialEq)]
-pub struct Message {
+pub struct ErrorMsg {
+    pub error_text: String,
+    pub error_code: ErrorCode,
+    pub username: String, 
+    pub ip: [u8;4],
+    pub port: u16,
+}
+
+impl ErrorMsg {
+    const MSG_TYPE: u8 = 0;
+
+    pub fn new(error_text: String, error_code: ErrorCode, username: String, ip: &[u8;4], port: &u16,) -> Self {
+        Self {
+            error_text,
+            error_code,
+            username,
+            ip: *ip,
+            port: *port,
+        }
+    }
+    
+    pub fn new_empty() -> Self {
+        Self {
+            error_text: "".to_string(),
+            error_code: ErrorCode::ServerError,
+            username: "".to_string(),
+            ip: [0,0,0,0],
+            port: 0,
+        }
+    }
+}
+
+#[repr(u8)]
+#[derive(Debug, Clone, PartialEq)]
+pub enum ErrorCode {
+    ServerError = 0,
+    ClientNotFound = 1,
+    MessageError = 2,
+}
+
+pub struct SuccessMsg {
     pub text: String,
     pub username: String, 
     pub ip: [u8;4],
     pub port: u16,
 }
 
-impl Message {
+impl SuccessMsg {
+    const MSG_TYPE: u8 = 1;
+
+    pub fn new(text: String, username: String, ip: &[u8;4], port: &u16,) -> Self {
+        Self {
+            text,
+            username,
+            ip: *ip,
+            port: *port,
+        }
+    }
+    
+    pub fn new_empty() -> Self {
+        Self {
+            text: "".to_string(),
+            username: "".to_string(),
+            ip: [0,0,0,0],
+            port: 0,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct TextMsg {
+    pub text: String,
+    pub username: String, 
+    pub ip: [u8;4],
+    pub port: u16,
+}
+
+impl TextMsg {
+    const MSG_TYPE: u8 = 2;
+
     pub fn new(text: String, username: String, ip: &[u8;4], port: &u16,) -> Self {
         Self {
             text,
@@ -59,47 +137,68 @@ impl Message {
 /// - rest: text theoretical max 65535
 pub fn generate_message(message: Message) -> Vec<u8> {
     let mut message_buffer: Vec<u8> = Vec::new();
-    message.ip.iter().for_each(|part| {
-        message_buffer.push(*part);
-    });
-    let port_arr: [u8;2] = split_u16(message.port);
-    message_buffer.append(&mut port_arr.to_vec());
-    message_buffer.push(message.username.len() as u8);
-    message_buffer.append(&mut message.username.as_bytes().to_vec());
-    let text_len_arr: [u8;2] = split_u16(message.text.len() as u16);
-    message_buffer.append(&mut text_len_arr.to_vec());
-    message_buffer.append(&mut message.text.as_bytes().to_vec());
+    match message {
+        Message::ErrorMsg(msg) => {
+            todo!()
+        }
+        Message::SuccessMsg(msg) => {
+            todo!()
+        }
+        Message::TextMsg(msg) => {
+            msg.ip.iter().for_each(|part| {
+                message_buffer.push(*part);
+            });
+            let port_arr: [u8;2] = split_u16(msg.port);
+            message_buffer.append(&mut port_arr.to_vec());
+            message_buffer.push(msg.username.len() as u8);
+            message_buffer.append(&mut msg.username.as_bytes().to_vec());
+            let text_len_arr: [u8;2] = split_u16(msg.text.len() as u16);
+            message_buffer.append(&mut text_len_arr.to_vec());
+            message_buffer.append(&mut msg.text.as_bytes().to_vec());
+        }
+    }
     
     message_buffer
 }
 
 /// # Turns a `Vec<u8>` buffer into a message struct instance
 pub fn decypher_message(message: &Vec<u8>) -> Message {
-    let mut message_out: Message = Message::new_empty();
-    let mut temp_ip: [u8;4] = [0;4];
-    for (i,msg_byte) in message[0..=3].iter().enumerate() {
-        temp_ip[i] = *msg_byte;
+    match message[0] {
+        0 => {
+            todo!()
+        }
+        1 => {
+            todo!()
+        }
+        2 => {
+            let mut message_out: TextMsg = TextMsg::new_empty();
+            let mut temp_ip: [u8;4] = [0;4];
+            for (i,msg_byte) in message[0..=3].iter().enumerate() {
+                temp_ip[i] = *msg_byte;
+            }
+
+            message_out.ip = temp_ip;
+            message_out.port = combine_bytes([message[4], message[5]]);
+
+            let username_len = message[6];
+            let mut temp_username: String = String::new();
+            for username_byte in message[7..(7+username_len) as usize].iter() {
+                temp_username.push(*username_byte as char);
+            }
+
+            // let text_len: usize = combine_bytes([message[(7+username_len) as usize], message[(7+username_len+1) as usize]]) as usize;
+            let mut temp_text: String = String::new();
+            for text_byte in message[(9+username_len as usize)..].iter() {
+                temp_text.push(*text_byte as char);
+            }
+
+            message_out.username = temp_username;
+            message_out.text = temp_text;
+
+            Message::TextMsg(message_out)
+        }
+        _  => unreachable!()
     }
-
-    message_out.ip = temp_ip;
-    message_out.port = combine_bytes([message[4], message[5]]);
-
-    let username_len = message[6];
-    let mut temp_username: String = String::new();
-    for username_byte in message[7..(7+username_len) as usize].iter() {
-        temp_username.push(*username_byte as char);
-    }
-
-    // let text_len: usize = combine_bytes([message[(7+username_len) as usize], message[(7+username_len+1) as usize]]) as usize;
-    let mut temp_text: String = String::new();
-    for text_byte in message[(9+username_len as usize)..].iter() {
-        temp_text.push(*text_byte as char);
-    }
-
-    message_out.username = temp_username;
-    message_out.text = temp_text;
-
-    message_out
 }
 
 /// # Takes a `TcpStream`, reads the data and returns a `Vec<u8>` buffer
@@ -123,22 +222,34 @@ fn handle_client(mut input_stream: TcpStream) -> Result<Vec<u8>, Error> {
 /// then uses the `TcpStream` to send the message to the client by first sending the length of the
 /// message and then the content.
 fn relay(clients: &Arc<Mutex<HashMap<[u8;4],TcpStream>>>, message: Message) -> Result<(), Error> {
-    let client_list = clients.lock().expect("failed to lock mutex");
-    let mut client = client_list.get(&message.ip).ok_or(Err::<(), std::io::Error>(std::io::Error::new(std::io::ErrorKind::Other, "client not found"))).unwrap();
-    let message_buffer: Vec<u8> = generate_message(message);
-    let buffer_len: usize = message_buffer.len();
-    client.write_all(&buffer_len.to_be_bytes())?;
-    client.write_all(&message_buffer)?;
-    client.flush()?;
+    match message {
+        Message::ErrorMsg(_err_msg) => {
+            todo!("im not sure why you would wanna relay an error message tbh");
+        }
+        Message::SuccessMsg(msg) => {
+            todo!()
+        }
+        Message::TextMsg(msg) => {
+            let client_list = clients.lock().expect("failed to lock mutex");
+            let mut client = client_list.get(&msg.ip).ok_or(Err::<(), std::io::Error>(std::io::Error::new(std::io::ErrorKind::Other, "client not found"))).unwrap();
+            let message_buffer: Vec<u8> = generate_message(Message::TextMsg(msg));
+            let buffer_len: u64 = message_buffer.len() as u64;
+            client.write_all(&buffer_len.to_be_bytes())?;
+            client.write_all(&message_buffer)?;
+            client.flush()?;
+        }
+    }
 
     Ok(())
 }
 
 fn relay_loop(input_stream: TcpStream, clients: &Arc<Mutex<HashMap<[u8;4],TcpStream>>>) -> Result<(), Error> {
     loop {
-        let msg_buff = handle_client(input_stream.try_clone()?)?;
+        let mut input_stream_clone = input_stream.try_clone()?;
+        let msg_buff = handle_client(input_stream_clone)?;
         let message: Message = decypher_message(&msg_buff);
         relay(&clients, message)?;
+
     }
 }
 
