@@ -139,12 +139,13 @@ pub fn generate_message(message: Message) -> Vec<u8> {
     let mut message_buffer: Vec<u8> = Vec::new();
     match message {
         Message::ErrorMsg(msg) => {
-            todo!()
+            message_buffer.push(0);
         }
         Message::SuccessMsg(msg) => {
-            todo!()
+            message_buffer.push(1);
         }
         Message::TextMsg(msg) => {
+            message_buffer.push(2);
             msg.ip.iter().for_each(|part| {
                 message_buffer.push(*part);
             });
@@ -161,43 +162,52 @@ pub fn generate_message(message: Message) -> Vec<u8> {
     message_buffer
 }
 
+#[derive(Debug)]
+pub enum ParsingError {
+    MsgTypeErr,
+    MsgStructureErr,
+}
+
 /// # Turns a `Vec<u8>` buffer into a message struct instance
-pub fn decypher_message(message: &Vec<u8>) -> Message {
+pub fn decypher_message(message: &Vec<u8>) -> Result<Message, ParsingError> {
     match message[0] {
         0 => {
             todo!()
         }
         1 => {
-            todo!()
+            let mut message_out: SuccessMsg = SuccessMsg::new_empty();
+            
+
+            Ok(Message::SuccessMsg(message_out))
         }
         2 => {
             let mut message_out: TextMsg = TextMsg::new_empty();
             let mut temp_ip: [u8;4] = [0;4];
-            for (i,msg_byte) in message[0..=3].iter().enumerate() {
+            for (i,msg_byte) in message[1..=4].iter().enumerate() {
                 temp_ip[i] = *msg_byte;
             }
 
             message_out.ip = temp_ip;
-            message_out.port = combine_bytes([message[4], message[5]]);
+            message_out.port = combine_bytes([message[5], message[6]]);
 
-            let username_len = message[6];
+            let username_len = message[7];
             let mut temp_username: String = String::new();
-            for username_byte in message[7..(7+username_len) as usize].iter() {
+            for username_byte in message[8..(8+username_len) as usize].iter() {
                 temp_username.push(*username_byte as char);
             }
 
-            // let text_len: usize = combine_bytes([message[(7+username_len) as usize], message[(7+username_len+1) as usize]]) as usize;
+            // let text_len: usize = combine_bytes([message[(8+username_len) as usize], message[(8+username_len+1) as usize]]) as usize;
             let mut temp_text: String = String::new();
-            for text_byte in message[(9+username_len as usize)..].iter() {
+            for text_byte in message[(10+username_len as usize)..].iter() {
                 temp_text.push(*text_byte as char);
             }
 
             message_out.username = temp_username;
             message_out.text = temp_text;
 
-            Message::TextMsg(message_out)
+            Ok(Message::TextMsg(message_out))
         }
-        _  => unreachable!()
+        _  => Err(ParsingError::MsgTypeErr)
     }
 }
 
@@ -243,11 +253,11 @@ fn relay(clients: &Arc<Mutex<HashMap<[u8;4],TcpStream>>>, message: Message) -> R
     Ok(())
 }
 
-fn relay_loop(input_stream: TcpStream, clients: &Arc<Mutex<HashMap<[u8;4],TcpStream>>>) -> Result<(), Error> {
+fn relay_loop(input_stream: TcpStream, clients: &Arc<Mutex<HashMap<[u8;4],TcpStream>>>) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     loop {
         let mut input_stream_clone = input_stream.try_clone()?;
         let msg_buff = handle_client(input_stream_clone)?;
-        let message: Message = decypher_message(&msg_buff);
+        let message: Message = decypher_message(&msg_buff).expect("decyphering message failed");
         relay(&clients, message)?;
 
     }
@@ -268,15 +278,15 @@ impl Server {
     }
 
     /// # Starts listening and handles connections in new threads
-    pub fn start_receive(&mut self) -> Result<(), Error> {
+    pub fn start_receive(&mut self) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         for stream in self.listener.incoming() {
             let clients = Arc::clone(&self.clients);
-            thread::spawn(move|| -> Result<(), Error>{
+            thread::spawn(move|| -> Result<(), Box<dyn std::error::Error + Send + Sync>>{
                 let stream = stream?;
                 let stream_clone = stream.try_clone()?;
                 let socket_addr_v4: SocketAddrV4 = match stream.peer_addr()? {
                     SocketAddr::V4(addr) => addr,
-                    SocketAddr::V6(_) => return Err(std::io::Error::new(std::io::ErrorKind::Other, "ipv6 not supported")),
+                    SocketAddr::V6(_) => panic!("ipv6 not supported"),
                 };
                 clients.lock().expect("locking mutex failed").insert(socket_addr_v4.ip().octets(), stream_clone);
                 relay_loop(stream, &clients)
